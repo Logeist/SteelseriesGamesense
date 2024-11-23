@@ -12,11 +12,15 @@ import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
+import net.runelite.client.util.ExecutorServiceExceptionLogger;
 import net.runelite.client.util.OSType;
 import okhttp3.*;
 
 
 import java.io.*;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 
 @Slf4j
@@ -31,6 +35,7 @@ public class GamesensePlugin extends Plugin
 
 	//help vars to determine what should change
 	private int lastXp =0;
+	private int lastEnergyTens = -1;
 	private int currentHp =0;
 	private int currentPrayer =0;
 	@Inject
@@ -39,6 +44,7 @@ public class GamesensePlugin extends Plugin
 	private OkHttpClient okHttpClient;
 	@Inject
 	private GameSenseConfig config;
+	private ScheduledExecutorService scheduledExecutorService;
 
 	@Provides
 	GameSenseConfig provideConfig(ConfigManager configManager)
@@ -72,6 +78,14 @@ public class GamesensePlugin extends Plugin
 			GameEvent event = new GameEvent(TrackedStats.HEALTH,percent);
 
 			executePost("game_event ",event.buildJson());
+            log.info("Health changed to: {}", currentHp);
+			log.info("config.useOled() is: {}", config.useOled());
+
+			if (config.useOled()) {
+				GameEvent eventOLED = new GameEvent(TrackedStats.HEALTH, currentHp, getDisplayName());
+				executePost("game_event ", eventOLED.buildJsonOLED());
+				log.info("sent OLED event:\n{}", eventOLED.buildJsonOLED());
+			}
 
 		} if  (statChanged.getSkill() == Skill.PRAYER){
 
@@ -103,8 +117,18 @@ public class GamesensePlugin extends Plugin
 
 	}
 	private void sendEnergy(){
-		GameEvent event = new GameEvent(TrackedStats.RUN_ENERGY,client.getEnergy());
-		executePost("game_event ",event.buildJson());//update the run energy
+		int currentEnergy = client.getEnergy();
+		int currentEnergyTens = currentEnergy / 10;
+		if (currentEnergyTens != lastEnergyTens) {
+			lastEnergyTens = currentEnergyTens;
+			GameEvent event = new GameEvent(TrackedStats.RUN_ENERGY, currentEnergy);
+			executePost("game_event", event.buildJson()); // Update the run energy
+			if (config.useOled()) {
+				GameEvent eventOLED = new GameEvent(TrackedStats.RUN_ENERGY, currentEnergy, getDisplayName());
+				executePost("game_event", eventOLED.buildJsonOLED());
+				log.info("sent OLED event:\n{}", eventOLED.buildJsonOLED());
+			}
+		}
 	}
 	private void sendSpecialAttackPercent(){
 		GameEvent event = new GameEvent(TrackedStats.SPECIAL_ATTACK,client.getVar(VarPlayer.SPECIAL_ATTACK_PERCENT)/10);
@@ -123,7 +147,7 @@ public class GamesensePlugin extends Plugin
 
 
 	//find the port to which we should connect
-	private void FindSSE3Port() {
+private void FindSSE3Port() {
 
 		// Open coreProps.json to parse what port SteelSeries Engine 3 is listening on.
 		String jsonAddressStr = "";
@@ -170,17 +194,51 @@ public class GamesensePlugin extends Plugin
 	private void registerStat(TrackedStats event, int IconId){
 		StatRegister statRegister = new StatRegister(event,0,100, IconId);
 		executePost("register_game_event",statRegister.buildJson());
+		if(config.useOled()) {
+			StatRegister statRegisterOLED = new StatRegister(event, IconId);
+			executePost("register_game_event", statRegisterOLED.buildJsonOLED());
+			log.info("sent OLED event:\n {}", statRegisterOLED.buildJsonOLED().toString());
+		}
 
 	}
 
 	private void initGamesense(){
-
-			gameRegister();
+		scheduledExecutorService = new ExecutorServiceExceptionLogger(Executors.newSingleThreadScheduledExecutor());
+		gameRegister();
+		scheduledExecutorService.schedule(() -> {
 			registerStat(TrackedStats.HEALTH,38);
+			log.info("Registered Health after delay");
+		}, 500, TimeUnit.MILLISECONDS);
+
+		scheduledExecutorService.schedule(() -> {
 			registerStat(TrackedStats.PRAYER,40);
+			log.info("Registered Prayer after delay");
+		}, 1000, TimeUnit.MILLISECONDS);
+
+		scheduledExecutorService.schedule(() -> {
 			registerStat(TrackedStats.CURRENTSKILL,13);
+			log.info("Registered CurrentSkill after delay");
+		}, 1500, TimeUnit.MILLISECONDS);
+
+		scheduledExecutorService.schedule(() -> {
 			registerStat(TrackedStats.RUN_ENERGY,16);
+			log.info("Registered Run Energy after delay");
+		}, 2000, TimeUnit.MILLISECONDS);
+
+		scheduledExecutorService.schedule(() -> {
 			registerStat(TrackedStats.SPECIAL_ATTACK,0);
+			log.info("Registered Run Energy after delay");
+		}, 2500, TimeUnit.MILLISECONDS);
+
+		scheduledExecutorService.shutdown();
+	}
+
+	public String getDisplayName() {
+		Player localPlayer = client.getLocalPlayer();
+		if (localPlayer != null) {
+			return localPlayer.getName();
+		}
+		return "null name";
 	}
 
 	public void executePost(String extraAddress, JsonObject jsonData)  {
