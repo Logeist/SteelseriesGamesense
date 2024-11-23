@@ -3,10 +3,12 @@ package com.github.gmoley;
 import com.google.gson.JsonObject;
 import javax.inject.Inject;
 
+import com.google.inject.Provides;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.*;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.StatChanged;
+import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
@@ -35,11 +37,19 @@ public class GamesensePlugin extends Plugin
 	private Client client;
 	@Inject
 	private OkHttpClient okHttpClient;
+	@Inject
+	private GameSenseConfig config;
+
+	@Provides
+	GameSenseConfig provideConfig(ConfigManager configManager)
+	{
+		return configManager.getConfig(GameSenseConfig.class);
+	}
 
 	@Override
 	protected void startUp() throws Exception
 	{
-		log.info("Example started!");
+		log.info("GamesensePlugin started!");
 		FindSSE3Port();	//finding the steelseries client port
 		initGamesense(); //initialise the events that are displayable on the keyboard
 	}
@@ -47,7 +57,7 @@ public class GamesensePlugin extends Plugin
 	@Override
 	protected void shutDown() throws Exception
 	{
-		log.info("Example stopped!");
+		log.info("GamesensePlugin stopped!");
 	}
 
 	@Subscribe
