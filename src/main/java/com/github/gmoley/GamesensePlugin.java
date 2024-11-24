@@ -38,6 +38,7 @@ public class GamesensePlugin extends Plugin
 	private int lastEnergyTens = -1;
 	private int currentHp =0;
 	private int currentPrayer =0;
+	private int tickCount = 0;
 	@Inject
 	private Client client;
 	@Inject
@@ -95,6 +96,11 @@ public class GamesensePlugin extends Plugin
 			currentPrayer = lvl;
 			GameEvent event = new GameEvent(TrackedStats.PRAYER,percent);
 			executePost("game_event ",event.buildJson());
+			if (config.useOled()) {
+				GameEvent eventOLED = new GameEvent(TrackedStats.PRAYER, currentPrayer, getDisplayName());
+				executePost("game_event ", eventOLED.buildJsonOLED());
+				log.info("sent OLED event:\n{}", eventOLED.buildJsonOLED());
+			}
 		}
 		//if there was a change in XP we have had an xp drop
 		if (statChanged.getXp() != lastXp) {
@@ -108,12 +114,15 @@ public class GamesensePlugin extends Plugin
 				int percent = (int) (Math.min(1.0, (currentXP - currentLevelXP) / (double)(nextLevelXP - currentLevelXP))*100);
 				GameEvent event = new GameEvent(TrackedStats.CURRENTSKILL,  percent);
 				executePost("game_event ",event.buildJson());
-
+				if (config.useOled()) {
+					GameEvent eventOLED = new GameEvent(TrackedStats.CURRENTSKILL, percent, getDisplayName());
+					executePost("game_event ", eventOLED.buildJsonOLED());
+					log.info("sent OLED event:\n{}", eventOLED.buildJsonOLED());
+				}
 			}
 		}
-
-
-
+		sendEnergy();
+		sendSpecialAttackPercent();
 
 	}
 	private void sendEnergy(){
@@ -134,11 +143,20 @@ public class GamesensePlugin extends Plugin
 		GameEvent event = new GameEvent(TrackedStats.SPECIAL_ATTACK,client.getVar(VarPlayer.SPECIAL_ATTACK_PERCENT)/10);
 
 		executePost("game_event ",event.buildJson());//update the special attack
+		if (config.useOled()) {
+			GameEvent eventOLED = new GameEvent(TrackedStats.SPECIAL_ATTACK, client.getVar(VarPlayer.SPECIAL_ATTACK_PERCENT) / 10, getDisplayName());
+			executePost("game_event ", eventOLED.buildJsonOLED());
+			log.info("sent OLED event:\n{}", eventOLED.buildJsonOLED());
+		}
 
 	}
 
 	@Subscribe
 	public void onGameTick(GameTick tick){
+		//call these functions every ten ticks
+		this.tickCount++;
+		if (tickCount % 10 != 0) return;
+		log.info("Tick count: {}", tickCount);
 		sendEnergy();
 		sendSpecialAttackPercent();
 	}
@@ -193,10 +211,10 @@ private void FindSSE3Port() {
 	}
 	private void registerStat(TrackedStats event, int IconId){
 		StatRegister statRegister = new StatRegister(event,0,100, IconId);
-		executePost("register_game_event",statRegister.buildJson());
+		executePost("bind_game_event",statRegister.buildJson());
 		if(config.useOled()) {
 			StatRegister statRegisterOLED = new StatRegister(event, IconId);
-			executePost("register_game_event", statRegisterOLED.buildJsonOLED());
+			executePost("bind_game_event", statRegisterOLED.buildJsonOLED());
 			log.info("sent OLED event:\n {}", statRegisterOLED.buildJsonOLED().toString());
 		}
 
@@ -208,27 +226,27 @@ private void FindSSE3Port() {
 		scheduledExecutorService.schedule(() -> {
 			registerStat(TrackedStats.HEALTH,38);
 			log.info("Registered Health after delay");
-		}, 500, TimeUnit.MILLISECONDS);
+		}, 100, TimeUnit.MILLISECONDS);
 
 		scheduledExecutorService.schedule(() -> {
 			registerStat(TrackedStats.PRAYER,40);
 			log.info("Registered Prayer after delay");
-		}, 1000, TimeUnit.MILLISECONDS);
+		}, 200, TimeUnit.MILLISECONDS);
 
 		scheduledExecutorService.schedule(() -> {
 			registerStat(TrackedStats.CURRENTSKILL,13);
 			log.info("Registered CurrentSkill after delay");
-		}, 1500, TimeUnit.MILLISECONDS);
+		}, 300, TimeUnit.MILLISECONDS);
 
 		scheduledExecutorService.schedule(() -> {
 			registerStat(TrackedStats.RUN_ENERGY,16);
 			log.info("Registered Run Energy after delay");
-		}, 2000, TimeUnit.MILLISECONDS);
+		}, 400, TimeUnit.MILLISECONDS);
 
 		scheduledExecutorService.schedule(() -> {
 			registerStat(TrackedStats.SPECIAL_ATTACK,0);
 			log.info("Registered Run Energy after delay");
-		}, 2500, TimeUnit.MILLISECONDS);
+		}, 500, TimeUnit.MILLISECONDS);
 
 		scheduledExecutorService.shutdown();
 	}
@@ -241,19 +259,19 @@ private void FindSSE3Port() {
 		return "null name";
 	}
 
-	public void executePost(String extraAddress, JsonObject jsonData)  {
+	public void executePost(String extraAddress, JsonObject jsonData) {
 
-		RequestBody body = RequestBody.create(MediaType.parse("application/json"),jsonData.toString());
+		RequestBody body = RequestBody.create(MediaType.parse("application/json"), jsonData.toString());
 		Request request = new Request.Builder()
-				.url(sse3Address +"/"+ extraAddress)
+				.url(sse3Address + "/" + extraAddress)
 				.post(body)
 				.build();
-	Call call = okHttpClient.newCall(request);
-	try{
-		Response response = call.execute();
-		response.close();
-	} catch (IOException e){
-		e.printStackTrace();
-	}
+		Call call = okHttpClient.newCall(request);
+		try {
+			Response response = call.execute();
+			response.close();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
 	}
 }
