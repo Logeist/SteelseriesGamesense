@@ -39,6 +39,7 @@ public class GamesensePlugin extends Plugin
 	private int currentHp =0;
 	private int currentPrayer =0;
 	private int tickCount = 0;
+	private int lastSpecEnergy = 0;
 	@Inject
 	private Client client;
 	@Inject
@@ -121,8 +122,8 @@ public class GamesensePlugin extends Plugin
 				}
 			}
 		}
-		sendEnergy();
-		sendSpecialAttackPercent();
+//		sendEnergy();
+//		sendSpecialAttackPercent();
 
 	}
 	private void sendEnergy(){
@@ -140,13 +141,16 @@ public class GamesensePlugin extends Plugin
 		}
 	}
 	private void sendSpecialAttackPercent(){
-		GameEvent event = new GameEvent(TrackedStats.SPECIAL_ATTACK,client.getVar(VarPlayer.SPECIAL_ATTACK_PERCENT)/10);
-
-		executePost("game_event ",event.buildJson());//update the special attack
-		if (config.useOled()) {
-			GameEvent eventOLED = new GameEvent(TrackedStats.SPECIAL_ATTACK, client.getVar(VarPlayer.SPECIAL_ATTACK_PERCENT) / 10, getDisplayName());
-			executePost("game_event ", eventOLED.buildJsonOLED());
-			log.info("sent OLED event:\n{}", eventOLED.buildJsonOLED());
+		int currentSpec = client.getVar(VarPlayer.SPECIAL_ATTACK_PERCENT) / 10;
+		if (currentSpec != lastSpecEnergy) {
+			lastSpecEnergy = currentSpec;
+			GameEvent event = new GameEvent(TrackedStats.SPECIAL_ATTACK, currentSpec);
+			executePost("game_event", event.buildJson()); // Update the special attack
+			if (config.useOled()) {
+				GameEvent eventOLED = new GameEvent(TrackedStats.SPECIAL_ATTACK, currentSpec, getDisplayName());
+				executePost("game_event", eventOLED.buildJsonOLED());
+				log.info("sent OLED event:\n{}", eventOLED.buildJsonOLED());
+			}
 		}
 
 	}
