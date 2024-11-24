@@ -131,10 +131,10 @@ public class GamesensePlugin extends Plugin
 		int currentEnergyTens = currentEnergy / 10;
 		if (currentEnergyTens != lastEnergyTens) {
 			lastEnergyTens = currentEnergyTens;
-			GameEvent event = new GameEvent(TrackedStats.RUN_ENERGY, currentEnergy);
+			GameEvent event = new GameEvent(TrackedStats.RUN_ENERGY, Math.round((float) currentEnergyTens / 10));
 			executePost("game_event", event.buildJson()); // Update the run energy
 			if (config.useOled()) {
-				GameEvent eventOLED = new GameEvent(TrackedStats.RUN_ENERGY, currentEnergy, getDisplayName());
+				GameEvent eventOLED = new GameEvent(TrackedStats.RUN_ENERGY, Math.round((float) currentEnergyTens / 10), getDisplayName());
 				executePost("game_event", eventOLED.buildJsonOLED());
 				log.info("sent OLED event:\n{}", eventOLED.buildJsonOLED());
 			}
