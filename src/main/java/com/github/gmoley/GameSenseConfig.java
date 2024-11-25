@@ -10,10 +10,21 @@ public interface GameSenseConfig extends Config {
     @ConfigItem(
             keyName = "useOled",
             name = "Use OLED Display",
-            description = "Controls whether or not to use the OLED display"
+            description = "Controls whether or not to use the OLED display",
+            position = 1
     )
     default boolean useOled() {
         return false;
+    }
+
+    @ConfigItem(
+            keyName = "useCombinedEvent",
+            name = "Use Combined Event",
+            description = "Controls whether or not to use a single event for all OLED updates",
+            position = 2
+    )
+    default boolean useCombinedEvent() {
+        return true;
     }
 
 }
