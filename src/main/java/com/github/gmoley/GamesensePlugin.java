@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.*;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.StatChanged;
+import net.runelite.api.events.VarbitChanged;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.plugins.Plugin;
@@ -45,8 +46,8 @@ public class GamesensePlugin extends Plugin {
     private int tickCount = 0;
     private int lastSpecEnergy = 0;
 
-    private String headline = "";
-    private String subline = "";
+    private StringBuilder headlineBuilder;
+    private StringBuilder sublineBuilder;
 
     @Inject
     private Client client;
@@ -56,6 +57,7 @@ public class GamesensePlugin extends Plugin {
     private GameSenseConfig config;
     private ScheduledExecutorService scheduledExecutorService;
     private final ConcurrentLinkedQueue<StatChanged> statChangesQueue = new ConcurrentLinkedQueue<>();
+    private final ConcurrentLinkedQueue<VarbitChanged> varbitChangesQueue = new ConcurrentLinkedQueue<>();
     private final Map<String, String> statValues = new HashMap<>();
 
     @Provides
@@ -69,7 +71,9 @@ public class GamesensePlugin extends Plugin {
         scheduledExecutorService = new ExecutorServiceExceptionLogger(Executors.newSingleThreadScheduledExecutor());
         FindSSE3Port();    //finding the steelseries client port
         initGamesense(); //initialise the events that are displayable on the keyboard
-        scheduledExecutorService.scheduleAtFixedRate(this::processStatChanges, 8, 2, TimeUnit.SECONDS);
+        scheduledExecutorService.scheduleAtFixedRate(this::processStatChanges, 3, 1, TimeUnit.SECONDS);
+        scheduledExecutorService.scheduleAtFixedRate(this::processVarbitchanges, 3, 1, TimeUnit.SECONDS);
+        scheduledExecutorService.scheduleAtFixedRate(this::sendCombinedEvent, 5, 1, TimeUnit.SECONDS);
     }
 
     @Override
@@ -81,8 +85,32 @@ public class GamesensePlugin extends Plugin {
     }
 
     @Subscribe
+   public void onVarbitChanged(VarbitChanged varbitChanged) {
+        varbitChangesQueue.add(varbitChanged);
+
+    }
+
+   @Subscribe
     public void onStatChanged(StatChanged statChanged) {
         statChangesQueue.add(statChanged);
+    }
+
+    private void processVarbitchanges() {
+        while (!varbitChangesQueue.isEmpty()) {
+            VarbitChanged varbitChanged = varbitChangesQueue.poll();
+            if (varbitChanged != null) {
+                if (varbitChanged.getVarpId() == VarPlayer.CANNON_AMMO) {
+                    int remainingCannonballs = varbitChanged.getValue();
+                    statValues.put("Cannonballs", "Cbs:" + remainingCannonballs);
+                    log.info("Cannonballs remaining: {}", remainingCannonballs);
+                } else if (varbitChanged.getVarpId() == VarPlayer.CANNON_STATE) {
+                    boolean cannonPlaced = varbitChanged.getValue() == 4;
+                    if (!cannonPlaced) {
+                        statValues.remove("Cannonballs");
+                    }
+                }
+            }
+        }
     }
 
     private void processStatChanges() {
@@ -95,7 +123,7 @@ public class GamesensePlugin extends Plugin {
                     int percent = currentHp * 100 / max;
                     //currentHp = lvl;
                     if (config.useCombinedEvent() && config.useOled()) {
-                        statValues.put("HP", "HP: " + currentHp);
+                        statValues.put("HP", "HP:" + currentHp);
                     } else if (config.useOled()) {
                         GameEvent eventOLED = new GameEvent(TrackedStats.HEALTH, currentHp, getDisplayName());
                         executePost("game_event ", eventOLED.buildJsonOLED());
@@ -111,7 +139,7 @@ public class GamesensePlugin extends Plugin {
                     int percent = currentPrayer * 100 / max;
 
                     if (config.useCombinedEvent() && config.useOled()) {
-                        statValues.put("Prayer", "Prayer: " + currentPrayer);
+                        statValues.put("Prayer", "Pray:" + currentPrayer);
                     } else if (config.useOled()) {
                         GameEvent eventOLED = new GameEvent(TrackedStats.PRAYER, currentPrayer, getDisplayName());
                         executePost("game_event ", eventOLED.buildJsonOLED());
@@ -128,7 +156,11 @@ public class GamesensePlugin extends Plugin {
                     int percent = (int) (Math.min(1.0, (currentXP - currentLevelXP) / (double) (nextLevelXP - currentLevelXP)) * 100);
 
                     if (config.useCombinedEvent() && config.useOled()) {
-                        statValues.put("XP", "XP: " + QuantityFormatter.quantityToRSDecimalStack(currentXP));
+                        if (currentXP != 0) {
+                        statValues.put("XP", String.format("%s:%s", getShortenedSkill(statChanged.getSkill()), percent + "%")); //QuantityFormatter.quantityToRSDecimalStack(currentXP)
+                        } else {
+                            statValues.remove("XP");
+                        }
                     } else if (config.useOled()) {
                         GameEvent eventOLED = new GameEvent(TrackedStats.CURRENTSKILL, percent, getDisplayName());
                         executePost("game_event ", eventOLED.buildJsonOLED());
@@ -140,28 +172,31 @@ public class GamesensePlugin extends Plugin {
                 }
             }
         }
-		//TODO: Send Run & Spec & Cannonballs
+		//TODO: Send Run & Spec
 
+    }
+
+    private void sendCombinedEvent() {
         if (config.useCombinedEvent()) {
-            StringBuilder headlineBuilder = new StringBuilder();
-            StringBuilder sublineBuilder = new StringBuilder();
+            headlineBuilder = new StringBuilder();
+            sublineBuilder = new StringBuilder();
 
             for (Map.Entry<String, String> entry : statValues.entrySet()) {
-                if (entry.getKey().equals("XP")) {
-                    sublineBuilder.append(entry.getValue()).append(" ");
-                } else {
+                if (entry.getKey().equals("HP") || entry.getKey().equals("Prayer")) {
                     headlineBuilder.append(entry.getValue()).append(" ");
+                } else {
+                    sublineBuilder.append(entry.getValue()).append(" ");
                 }
             }
-
-            if (headlineBuilder.length() > 0 || sublineBuilder.length() > 0) {
-                GameEvent omniEvent = new GameEvent(TrackedStats.COMBINED, headlineBuilder.toString().trim(), sublineBuilder.toString().trim());
-                log.info("headline: {}\nsubline: {}", headlineBuilder.toString().trim(), sublineBuilder.toString().trim());
-                executePost("game_event", omniEvent.buildJsonOLEDCombined());
-                log.info("sent OLED event:\n{}", omniEvent.buildJsonOLEDCombined());
+            if (isLoggedIn()) {
+                if (headlineBuilder.length() > 0 || sublineBuilder.length() > 0) {
+                    GameEvent omniEvent = new GameEvent(TrackedStats.COMBINED, headlineBuilder.toString().trim(), sublineBuilder.toString().trim());
+                    log.info("headline: {}\nsubline: {}", headlineBuilder.toString().trim(), sublineBuilder.toString().trim());
+                    executePost("game_event", omniEvent.buildJsonOLEDCombined());
+                    log.info("sent OLED event:\n{}", omniEvent.buildJsonOLEDCombined());
+                }
             }
         }
-
     }
 
     private void sendEnergy() {
@@ -263,36 +298,12 @@ public class GamesensePlugin extends Plugin {
 
     private void initGamesense() {
         gameRegister();
-        scheduledExecutorService.schedule(() -> {
-            registerStat(TrackedStats.HEALTH, 38);
-            log.info("Registered Health after delay");
-        }, 100, TimeUnit.MILLISECONDS);
-
-        scheduledExecutorService.schedule(() -> {
-            registerStat(TrackedStats.PRAYER, 40);
-            log.info("Registered Prayer after delay");
-        }, 200, TimeUnit.MILLISECONDS);
-
-        scheduledExecutorService.schedule(() -> {
-            registerStat(TrackedStats.CURRENTSKILL, 13);
-            log.info("Registered CurrentSkill after delay");
-        }, 300, TimeUnit.MILLISECONDS);
-
-        scheduledExecutorService.schedule(() -> {
-            registerStat(TrackedStats.RUN_ENERGY, 16);
-            log.info("Registered Run Energy after delay");
-        }, 400, TimeUnit.MILLISECONDS);
-
-        scheduledExecutorService.schedule(() -> {
-            registerStat(TrackedStats.SPECIAL_ATTACK, 0);
-            log.info("Registered Run Energy after delay");
-        }, 500, TimeUnit.MILLISECONDS);
-
-        scheduledExecutorService.schedule(() -> {
-            registerStat(TrackedStats.COMBINED, 0);
-            log.info("Registered CombinedEvent after delay");
-        }, 600, TimeUnit.MILLISECONDS);
-
+        registerStat(TrackedStats.HEALTH, 38);
+        registerStat(TrackedStats.PRAYER, 40);
+        registerStat(TrackedStats.CURRENTSKILL, 13);
+        registerStat(TrackedStats.RUN_ENERGY, 16);
+        registerStat(TrackedStats.SPECIAL_ATTACK, 0);
+        registerStat(TrackedStats.COMBINED, 0);
     }
 
     public String getDisplayName() {
@@ -301,6 +312,63 @@ public class GamesensePlugin extends Plugin {
             return localPlayer.getName();
         }
         return "null name";
+    }
+
+    private boolean isLoggedIn() {
+        return client.getGameState() == GameState.LOGGED_IN;
+    }
+
+    public String getShortenedSkill(Skill skill) {
+        switch (skill) {
+            case ATTACK:
+                return "ATK";
+            case DEFENCE:
+                return "DEF";
+            case STRENGTH:
+                return "STR";
+            case HITPOINTS:
+                return "HP";
+            case RANGED:
+                return "RNG";
+            case PRAYER:
+                return "PRAY";
+            case MAGIC:
+                return "MAGE";
+            case COOKING:
+                return "COOK";
+            case WOODCUTTING:
+                return "WC";
+            case FLETCHING:
+                return "FLETCH";
+            case FISHING:
+                return "FISH";
+            case FIREMAKING:
+                return "FM";
+            case CRAFTING:
+                return "CRAFT";
+            case SMITHING:
+                return "SMITH";
+            case MINING:
+                return "MINE";
+            case HERBLORE:
+                return "HERB";
+            case AGILITY:
+                return "AGIL";
+            case THIEVING:
+                return "THIEV";
+            case SLAYER:
+                return "SLAY";
+            case FARMING:
+                return "FARM";
+            case RUNECRAFT:
+                return "RC";
+            case HUNTER:
+                return "HUNT";
+            case CONSTRUCTION:
+                return "CON";
+            default:
+                return "NULL";
+        }
     }
 
     public void executePost(String extraAddress, JsonObject jsonData) {
