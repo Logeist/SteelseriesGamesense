@@ -73,6 +73,7 @@ public class GamesensePlugin extends Plugin {
         initGamesense(); //initialise the events that are displayable on the keyboard
         scheduledExecutorService.scheduleAtFixedRate(this::processStatChanges, 3, 1, TimeUnit.SECONDS);
         scheduledExecutorService.scheduleAtFixedRate(this::processVarbitchanges, 3, 1, TimeUnit.SECONDS);
+        scheduledExecutorService.scheduleAtFixedRate(this::sendEnergy, 3, 1, TimeUnit.SECONDS);
         scheduledExecutorService.scheduleAtFixedRate(this::sendCombinedEvent, 5, 1, TimeUnit.SECONDS);
     }
 
@@ -107,6 +108,19 @@ public class GamesensePlugin extends Plugin {
                     boolean cannonPlaced = varbitChanged.getValue() == 4;
                     if (!cannonPlaced) {
                         statValues.remove("Cannonballs");
+                    }
+                } else if (varbitChanged.getVarpId() == VarPlayer.SPECIAL_ATTACK_PERCENT) {
+                    int currentSpec = varbitChanged.getValue() / 10;
+                    if (config.useCombinedEvent()) {
+                        statValues.put("Spec", "Spec:" + currentSpec);
+                        log.info("Spec: {}", currentSpec);
+                    } else if (config.useOled()) {
+                        GameEvent eventOLED = new GameEvent(TrackedStats.SPECIAL_ATTACK, currentSpec, getDisplayName());
+                        executePost("game_event", eventOLED.buildJsonOLED());
+                        log.info("sent OLED event:\n{}", eventOLED.buildJsonOLED());
+                    } else {
+                        GameEvent event = new GameEvent(TrackedStats.SPECIAL_ATTACK, currentSpec);
+                        executePost("game_event", event.buildJson()); // Update the special attack
                     }
                 }
             }
@@ -172,7 +186,6 @@ public class GamesensePlugin extends Plugin {
                 }
             }
         }
-		//TODO: Send Run & Spec
 
     }
 
@@ -200,45 +213,24 @@ public class GamesensePlugin extends Plugin {
     }
 
     private void sendEnergy() {
-        int currentEnergy = client.getEnergy();
-        int currentEnergyTens = currentEnergy / 10;
-        if (currentEnergyTens != lastEnergyTens) {
-            lastEnergyTens = currentEnergyTens;
-            GameEvent event = new GameEvent(TrackedStats.RUN_ENERGY, Math.round((float) currentEnergyTens / 10));
-            executePost("game_event", event.buildJson()); // Update the run energy
-            if (config.useOled()) {
-                GameEvent eventOLED = new GameEvent(TrackedStats.RUN_ENERGY, Math.round((float) currentEnergyTens / 10), getDisplayName());
-                executePost("game_event", eventOLED.buildJsonOLED());
-                log.info("sent OLED event:\n{}", eventOLED.buildJsonOLED());
+        if (isLoggedIn()) {
+            int currentEnergy = client.getEnergy();
+            int currentEnergyRounded = currentEnergy / 100;
+            if (currentEnergyRounded != lastEnergyTens) {
+                lastEnergyTens = currentEnergyRounded;
+                if (config.useCombinedEvent()) {
+                    statValues.put("Run", "Run:" + currentEnergyRounded);
+                } else if (config.useOled() && !config.useCombinedEvent()) {
+                    GameEvent eventOLED = new GameEvent(TrackedStats.RUN_ENERGY,  currentEnergyRounded, getDisplayName());
+                    executePost("game_event", eventOLED.buildJsonOLED());
+                    log.info("sent OLED event:\n{}", eventOLED.buildJsonOLED());
+                } else {
+                    GameEvent event = new GameEvent(TrackedStats.RUN_ENERGY, currentEnergyRounded);
+                    executePost("game_event", event.buildJson()); // Update the run energy
+                }
             }
         }
     }
-
-    private void sendSpecialAttackPercent() {
-        int currentSpec = client.getVar(VarPlayer.SPECIAL_ATTACK_PERCENT) / 10;
-        if (currentSpec != lastSpecEnergy) {
-            lastSpecEnergy = currentSpec;
-            GameEvent event = new GameEvent(TrackedStats.SPECIAL_ATTACK, currentSpec);
-            executePost("game_event", event.buildJson()); // Update the special attack
-            if (config.useOled()) {
-                GameEvent eventOLED = new GameEvent(TrackedStats.SPECIAL_ATTACK, currentSpec, getDisplayName());
-                executePost("game_event", eventOLED.buildJsonOLED());
-                log.info("sent OLED event:\n{}", eventOLED.buildJsonOLED());
-            }
-        }
-
-    }
-
-//	@Subscribe
-//	public void onGameTick(GameTick tick){
-//		//call these functions every ten ticks
-//		this.tickCount++;
-//		if (tickCount % 10 != 0) return;
-//		log.info("Tick count: {}", tickCount);
-////		sendEnergy();
-////		sendSpecialAttackPercent();
-//	}
-
 
     //find the port to which we should connect
     private void FindSSE3Port() {
