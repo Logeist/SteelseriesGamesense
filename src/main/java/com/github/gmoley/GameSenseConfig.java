@@ -20,7 +20,7 @@ public interface GameSenseConfig extends Config {
     @ConfigItem(
             keyName = "useCombinedEvent",
             name = "Use Combined Event",
-            description = "Controls whether or not to use a single event for all OLED updates",
+            description = "Controls whether or not to use a single event for all OLED updates (highly recommended)",
             position = 2
     )
     default boolean useCombinedEvent() {

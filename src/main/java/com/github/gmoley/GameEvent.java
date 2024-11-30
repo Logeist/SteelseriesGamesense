@@ -58,7 +58,7 @@ public class GameEvent {
         JsonObject data = new JsonObject();
         JsonObject frame = new JsonObject();
         frame.addProperty("headline", this.headline);
-        frame.addProperty("subline", this.subline + "               ");
+        frame.addProperty("subline", this.subline );
         data.add("frame", frame);
         object.add("data", data);
         return object;

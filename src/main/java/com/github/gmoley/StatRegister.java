@@ -45,7 +45,6 @@ public class StatRegister {
 
         JsonObject line2 = new JsonObject();
         line2.addProperty("has-text", true);
-        line2.addProperty("suffix", " " + gameEvent.name());
         line2.addProperty("context-frame-key", "subline");
 
         JsonArray lines = new JsonArray();
@@ -53,8 +52,6 @@ public class StatRegister {
         lines.add(line2);
 
         JsonObject data = new JsonObject();
-        data.addProperty("length-millis", 250);
-        data.addProperty("repeats", true);
         data.add("lines", lines);
 
         JsonArray datas = new JsonArray();

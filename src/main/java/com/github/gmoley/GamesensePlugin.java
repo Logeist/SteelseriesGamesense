@@ -7,7 +7,6 @@ import javax.inject.Inject;
 import com.google.inject.Provides;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.*;
-import net.runelite.api.events.GameTick;
 import net.runelite.api.events.StatChanged;
 import net.runelite.api.events.VarbitChanged;
 import net.runelite.client.config.ConfigManager;
@@ -16,7 +15,6 @@ import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.util.ExecutorServiceExceptionLogger;
 import net.runelite.client.util.OSType;
-import net.runelite.client.util.QuantityFormatter;
 import okhttp3.*;
 
 
@@ -135,7 +133,6 @@ public class GamesensePlugin extends Plugin {
                     int currentHp = statChanged.getBoostedLevel();
                     int max = statChanged.getLevel();
                     int percent = currentHp * 100 / max;
-                    //currentHp = lvl;
                     if (config.useCombinedEvent() && config.useOled()) {
                         statValues.put("HP", "HP:" + currentHp);
                     } else if (config.useOled()) {
